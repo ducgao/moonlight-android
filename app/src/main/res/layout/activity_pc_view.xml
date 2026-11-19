@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:background="@android:color/black"
     tools:context=".PcView" >
 
     <RelativeLayout
@@ -10,12 +11,12 @@
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
         android:gravity="center"
-        android:layout_below="@+id/settingsButton"
+        android:layout_alignParentTop="true"
         android:layout_alignParentLeft="true"
         android:layout_alignParentStart="true"
         android:layout_alignParentRight="true"
         android:layout_alignParentEnd="true"
-        android:layout_alignParentBottom="true"
+        android:layout_above="@+id/hintBar"
         >
 
         <RelativeLayout
@@ -24,13 +25,13 @@
             android:layout_height="wrap_content"
             android:paddingLeft="@dimen/activity_horizontal_margin"
             android:paddingRight="@dimen/activity_horizontal_margin"
-            android:layout_centerInParent="true"
-            android:layout_centerVertical="true"
+            android:paddingTop="16dp"
+            android:layout_alignParentTop="true"
             android:layout_centerHorizontal="true">
             <ProgressBar
                 android:id="@+id/pcs_loading"
-                android:layout_width="75dp"
-                android:layout_height="75dp"
+                android:layout_width="24dp"
+                android:layout_height="24dp"
                 android:indeterminate="true"/>
             <TextView
                 android:layout_width="wrap_content"
@@ -40,7 +41,8 @@
                 android:layout_marginLeft="10dp"
                 android:layout_marginStart="10dp"
                 android:layout_centerVertical="true"
-                android:textAppearance="?android:attr/textAppearanceLarge"
+                android:textSize="13sp"
+                android:textColor="#FF9A9AA5"
                 android:gravity="center"
                 android:text="@string/searching_pc"/>
         </RelativeLayout>
@@ -49,6 +51,7 @@
 
     <ImageButton
         android:id="@+id/settingsButton"
+        android:visibility="gone"
         android:layout_width="70dp"
         android:layout_height="65dp"
         android:cropToPadding="false"
@@ -62,6 +65,7 @@
 
     <ImageButton
         android:id="@+id/helpButton"
+        android:visibility="gone"
         android:layout_width="70dp"
         android:layout_height="65dp"
         android:cropToPadding="false"
@@ -83,7 +87,15 @@
         android:layout_alignParentEnd="true"
         android:layout_alignParentRight="true"
         android:src="@drawable/ic_add"
+        android:visibility="gone"
         android:preferKeepClear="true"
         style="?android:attr/borderlessButtonStyle"/>
+
+    <include
+        layout="@layout/pc_hint_bar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:layout_centerHorizontal="true" />
 
 </RelativeLayout>

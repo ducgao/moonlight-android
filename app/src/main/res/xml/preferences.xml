@@ -135,6 +135,11 @@
             android:summary="@string/summary_checkbox_touchscreen_trackpad"
             android:defaultValue="true" />
         <CheckBoxPreference
+            android:key="checkbox_second_screen_trackpad"
+            android:title="@string/title_checkbox_second_screen_trackpad"
+            android:summary="@string/summary_checkbox_second_screen_trackpad"
+            android:defaultValue="true" />
+        <CheckBoxPreference
             android:key="checkbox_mouse_nav_buttons"
             android:title="@string/title_checkbox_mouse_nav_buttons"
             android:summary="@string/summary_checkbox_mouse_nav_buttons"

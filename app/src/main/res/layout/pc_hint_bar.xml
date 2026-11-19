@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Gamepad button hints shown at the bottom of the PC carousel -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/hintBar"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingBottom="10dp">
+    <TextView style="@style/HintChip" android:text="A" />
+    <TextView style="@style/HintLabel" android:text="@string/hint_select" />
+    <TextView style="@style/HintChip" android:text="X" />
+    <TextView style="@style/HintLabel" android:text="@string/hint_options" />
+    <TextView android:id="@+id/hintSelectChip" style="@style/HintChip" android:text="SELECT" />
+    <TextView android:id="@+id/hintSelectLabel" style="@style/HintLabel" android:text="@string/hint_menu" />
+</LinearLayout>

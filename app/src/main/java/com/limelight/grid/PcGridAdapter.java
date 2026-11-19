@@ -1,6 +1,9 @@
 package com.limelight.grid;
 
 import android.content.Context;
+import android.graphics.RenderEffect;
+import android.graphics.Shader;
+import android.os.Build;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
@@ -16,13 +19,14 @@ import java.util.Collections;
 import java.util.Comparator;
 
 public class PcGridAdapter extends GenericGridAdapter<PcView.ComputerObject> {
+    private static final float BLUR_RADIUS_PX = 6f;
 
     public PcGridAdapter(Context context, PreferenceConfiguration prefs) {
         super(context, getLayoutIdForPreferences(prefs));
     }
 
     private static int getLayoutIdForPreferences(PreferenceConfiguration prefs) {
-        return R.layout.pc_grid_item;
+        return R.layout.pc_carousel_item;
     }
 
     public void updateLayoutWithPreferences(Context context, PreferenceConfiguration prefs) {
@@ -50,8 +54,26 @@ public class PcGridAdapter extends GenericGridAdapter<PcView.ComputerObject> {
 
     @Override
     public void populateView(View parentView, ImageView imgView, ProgressBar prgView, TextView txtView, ImageView overlayView, PcView.ComputerObject obj) {
-        imgView.setImageResource(R.drawable.ic_computer);
-        if (obj.details.state == ComputerDetails.State.ONLINE) {
+        imgView.setImageResource(R.drawable.pc_case);
+
+        View card = parentView.findViewById(R.id.carousel_card);
+        if (card != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            // Clip the photo to the frame's rounded corners
+            card.setClipToOutline(true);
+        }
+
+        // Blur the PC art while it is locked (online but not paired); the lock icon stays sharp
+        boolean locked = obj.details.state == ComputerDetails.State.ONLINE &&
+                obj.details.pairState == PairingManager.PairState.NOT_PAIRED;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            imgView.setRenderEffect(locked ?
+                    RenderEffect.createBlurEffect(BLUR_RADIUS_PX, BLUR_RADIUS_PX, Shader.TileMode.DECAL) : null);
+        }
+        if (locked && Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
+            // No blur support before Android 12, dim instead
+            imgView.setAlpha(0.5f);
+        }
+        else if (obj.details.state == ComputerDetails.State.ONLINE) {
             imgView.setAlpha(1.0f);
         }
         else {
@@ -66,6 +88,23 @@ public class PcGridAdapter extends GenericGridAdapter<PcView.ComputerObject> {
         }
 
         txtView.setText(obj.details.name);
+
+        TextView statusView = parentView.findViewById(R.id.carousel_status);
+        if (statusView != null) {
+            int status;
+            if (obj.details.state == ComputerDetails.State.ONLINE) {
+                status = obj.details.pairState == PairingManager.PairState.NOT_PAIRED ?
+                        R.string.carousel_status_not_paired : R.string.pcview_menu_header_online;
+            }
+            else if (obj.details.state == ComputerDetails.State.OFFLINE) {
+                status = R.string.pcview_menu_header_offline;
+            }
+            else {
+                status = R.string.pcview_menu_header_unknown;
+            }
+            statusView.setText(status);
+
+        }
         if (obj.details.state == ComputerDetails.State.ONLINE) {
             txtView.setAlpha(1.0f);
         }

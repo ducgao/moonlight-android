@@ -2,6 +2,7 @@ package com.limelight.grid;
 
 import android.content.Context;
 import android.graphics.BitmapFactory;
+import android.os.Build;
 import android.view.View;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
@@ -28,13 +29,24 @@ import java.util.Set;
 public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
     private static final int ART_WIDTH_PX = 300;
     private static final int SMALL_WIDTH_DP = 100;
-    private static final int LARGE_WIDTH_DP = 150;
+    private static final int LARGE_WIDTH_DP = 224;
 
     private final ComputerDetails computer;
     private final String uniqueId;
     private final boolean showHiddenApps;
 
+    /** Touch on the per-item action buttons. */
+    public interface AppActionListener {
+        void onStartOrResume(AppView.AppObject app);
+        void onClose(AppView.AppObject app);
+    }
+
     private CachedAppAssetLoader loader;
+    private AppActionListener actionListener;
+
+    public void setActionListener(AppActionListener listener) {
+        this.actionListener = listener;
+    }
     private Set<Integer> hiddenAppIds = new HashSet<>();
     private ArrayList<AppView.AppObject> allApps = new ArrayList<>();
 
@@ -74,24 +86,15 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
     }
 
     private static int getLayoutIdForPreferences(PreferenceConfiguration prefs) {
-        if (prefs.smallIconMode) {
-            return R.layout.app_grid_item_small;
-        }
-        else {
-            return R.layout.app_grid_item;
-        }
+        // The carousel always uses large cover art
+        return R.layout.app_carousel_item;
     }
 
     public void updateLayoutWithPreferences(Context context, PreferenceConfiguration prefs) {
         int dpi = context.getResources().getDisplayMetrics().densityDpi;
         int dp;
 
-        if (prefs.smallIconMode) {
-            dp = SMALL_WIDTH_DP;
-        }
-        else {
-            dp = LARGE_WIDTH_DP;
-        }
+        dp = LARGE_WIDTH_DP;
 
         double scalingDivisor = ART_WIDTH_PX / (dp * (dpi / 160.0));
         if (scalingDivisor < 1.0) {
@@ -165,13 +168,47 @@ public class AppGridAdapter extends GenericGridAdapter<AppView.AppObject> {
         // Let the cached asset loader handle it
         loader.populateImageView(obj.app, imgView, txtView);
 
-        if (obj.isRunning) {
-            // Show the play button overlay
-            overlayView.setImageResource(R.drawable.ic_play);
-            overlayView.setVisibility(View.VISIBLE);
+        TextView titleView = parentView.findViewById(R.id.carousel_title);
+        if (titleView != null) {
+            titleView.setText(obj.app.getAppName());
         }
-        else {
-            overlayView.setVisibility(View.GONE);
+        View card = parentView.findViewById(R.id.carousel_card);
+        if (card != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            // Round the cover art using the card background's outline
+            card.setClipToOutline(true);
+        }
+
+        // The running state is shown through the action buttons, not an overlay icon
+        overlayView.setVisibility(View.GONE);
+
+        final AppView.AppObject app = obj;
+        TextView primaryLabel = parentView.findViewById(R.id.carousel_btn_primary_label);
+        if (primaryLabel != null) {
+            primaryLabel.setText(obj.isRunning ? R.string.carousel_resume : R.string.carousel_start);
+        }
+        View primary = parentView.findViewById(R.id.carousel_btn_primary);
+        if (primary != null) {
+            primary.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (actionListener != null) {
+                        actionListener.onStartOrResume(app);
+                    }
+                }
+            });
+        }
+        View close = parentView.findViewById(R.id.carousel_btn_close);
+        if (close != null) {
+            // Closing only makes sense for the app that is running on the host
+            close.setVisibility(obj.isRunning ? View.VISIBLE : View.GONE);
+            close.setOnClickListener(new View.OnClickListener() {
+                @Override
+                public void onClick(View v) {
+                    if (actionListener != null) {
+                        actionListener.onClose(app);
+                    }
+                }
+            });
         }
 
         if (obj.isHidden) {

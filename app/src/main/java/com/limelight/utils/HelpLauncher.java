@@ -37,6 +37,15 @@ public class HelpLauncher {
         context.startActivity(i);
     }
 
+    /** In-app WebView for the setup guide (used when it must open on a specific display). */
+    public static Intent createSetupGuideWebViewIntent(Context context) {
+        Intent i = new Intent(context, HelpActivity.class);
+        i.setData(Uri.parse(SETUP_GUIDE_URL));
+        return i;
+    }
+
+    private static final String SETUP_GUIDE_URL = "https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide";
+
     public static void launchSetupGuide(Context context) {
         launchUrl(context, "https://github.com/moonlight-stream/moonlight-docs/wiki/Setup-Guide");
     }

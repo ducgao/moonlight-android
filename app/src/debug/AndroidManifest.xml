@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Debug-only preview of the second-screen keyboard -->
+        <activity
+            android:name="com.limelight.debugpreview.KeyboardPreviewActivity"
+            android:exported="true"
+            android:resizeableActivity="true" />
+    </application>
+</manifest>

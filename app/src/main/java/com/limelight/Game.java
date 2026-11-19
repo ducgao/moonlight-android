@@ -5,6 +5,8 @@ import com.limelight.binding.PlatformBinding;
 import com.limelight.binding.audio.AndroidAudioRenderer;
 import com.limelight.binding.input.ControllerHandler;
 import com.limelight.binding.input.KeyboardTranslator;
+import com.limelight.binding.input.secondscreen.SecondScreenInputListener;
+import com.limelight.binding.input.secondscreen.SecondScreenManager;
 import com.limelight.binding.input.capture.InputCaptureManager;
 import com.limelight.binding.input.capture.InputCaptureProvider;
 import com.limelight.binding.input.touch.AbsoluteTouchContext;
@@ -111,6 +113,7 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
     private ControllerHandler controllerHandler;
     private KeyboardTranslator keyboardTranslator;
+    private SecondScreenManager secondScreenManager;
     private VirtualController virtualController;
 
     private PreferenceConfiguration prefConfig;
@@ -491,6 +494,46 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
         InputManager inputManager = (InputManager) getSystemService(Context.INPUT_SERVICE);
         inputManager.registerInputDeviceListener(keyboardTranslator, null);
+
+        // Dual-screen devices (e.g. AYN Thor): use the second display as trackpad/keyboard
+        if (prefConfig.secondScreenTrackpad) {
+            secondScreenManager = new SecondScreenManager(this, new SecondScreenInputListener() {
+                @Override
+                public void onMouseMove(short deltaX, short deltaY) {
+                    conn.sendMouseMove(deltaX, deltaY);
+                }
+
+                @Override
+                public void onMouseButton(byte button, boolean down) {
+                    if (down) {
+                        conn.sendMouseButtonDown(button);
+                    }
+                    else {
+                        conn.sendMouseButtonUp(button);
+                    }
+                }
+
+                @Override
+                public void onVerticalScroll(short amount) {
+                    conn.sendMouseHighResScroll(amount);
+                }
+
+                @Override
+                public void onHorizontalScroll(short amount) {
+                    conn.sendMouseHighResHScroll(amount);
+                }
+
+                @Override
+                public void onKeyboardKey(int androidKeyCode, boolean down) {
+                    keyboardEvent(down, (short) androidKeyCode);
+                }
+
+                @Override
+                public void onBackToAppList() {
+                    finish();
+                }
+            });
+        }
 
         // Initialize touch contexts
         for (int i = 0; i < touchContextMap.length; i++) {
@@ -1035,6 +1078,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
     @Override
     protected void onDestroy() {
         super.onDestroy();
+
+        if (secondScreenManager != null) {
+            secondScreenManager.stop();
+        }
 
         if (controllerHandler != null) {
             controllerHandler.destroy();
@@ -2230,6 +2277,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
             connecting = connected = false;
             updatePipAutoEnter();
 
+            if (secondScreenManager != null) {
+                secondScreenManager.stop();
+            }
+
             controllerHandler.stop();
 
             // Update GameManager state to indicate we're no longer in game
@@ -2430,6 +2481,10 @@ public class Game extends Activity implements SurfaceHolder.Callback,
 
                 // Keep the display on
                 getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+                if (secondScreenManager != null) {
+                    secondScreenManager.start();
+                }
 
                 // Update GameManager state to indicate we're in game
                 UiHelper.notifyStreamConnected(Game.this);

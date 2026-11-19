@@ -14,6 +14,7 @@ import com.limelight.nvstream.http.NvHTTP;
 import com.limelight.nvstream.http.PairingManager;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.ui.AdapterFragment;
+import com.limelight.ui.CarouselView;
 import com.limelight.ui.AdapterFragmentCallbacks;
 import com.limelight.utils.CacheHelper;
 import com.limelight.utils.Dialog;
@@ -31,6 +32,7 @@ import android.content.SharedPreferences;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.drawable.BitmapDrawable;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -39,9 +41,7 @@ import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ContextMenu.ContextMenuInfo;
-import android.widget.AbsListView;
 import android.widget.AdapterView;
-import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -619,30 +619,89 @@ public class AppView extends Activity implements AdapterFragmentCallbacks {
 
     @Override
     public int getAdapterFragmentLayoutId() {
-        return PreferenceConfiguration.readPreferences(AppView.this).smallIconMode ?
-                    R.layout.app_grid_view_small : R.layout.app_grid_view;
+        return R.layout.carousel_view;
     }
 
     @Override
-    public void receiveAbsListView(AbsListView listView) {
-        listView.setAdapter(appGridAdapter);
-        listView.setOnItemClickListener(new OnItemClickListener() {
+    public void receiveCarouselView(CarouselView listView) {
+        // Black behind the (edge-to-edge) system bars too
+        getWindow().getDecorView().setBackgroundColor(Color.BLACK);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(Color.BLACK);
+            getWindow().setNavigationBarColor(Color.BLACK);
+        }
+        listView.setSourceAdapter(appGridAdapter, 0);
+        if (appGridAdapter != null) appGridAdapter.setActionListener(new AppGridAdapter.AppActionListener() {
             @Override
-            public void onItemClick(AdapterView<?> arg0, View arg1, int pos,
-                                    long id) {
-                AppObject app = (AppObject) appGridAdapter.getItem(pos);
+            public void onStartOrResume(AppObject app) {
+                startOrResumeApp(app);
+            }
 
-                // Only open the context menu if something is running, otherwise start it
-                if (lastRunningAppId != 0) {
-                    openContextMenu(arg1);
-                } else {
-                    ServerHelper.doStart(AppView.this, app.app, computer, managerBinder);
+            @Override
+            public void onClose(AppObject app) {
+                closeApp(app);
+            }
+        });
+        // A: start / resume
+        listView.setOnItemClickListener(new CarouselView.OnItemClickListener() {
+            @Override
+            public void onItemClick(View arg1, int pos) {
+                startOrResumeApp((AppObject) appGridAdapter.getItem(pos));
+            }
+        });
+        // X: close the running app (other apps: the options menu)
+        listView.setOnItemSecondaryActionListener(new CarouselView.OnItemSecondaryActionListener() {
+            @Override
+            public void onItemSecondaryAction(View itemView, int pos) {
+                AppObject app = (AppObject) appGridAdapter.getItem(pos);
+                if (app.isRunning) {
+                    closeApp(app);
+                }
+                else {
+                    itemView.showContextMenu();
                 }
             }
         });
         UiHelper.applyStatusBarPadding(listView);
         registerForContextMenu(listView);
         listView.requestFocus();
+        listView.selectFirstItemWhenAvailable();
+    }
+
+    private void startOrResumeApp(final AppObject app) {
+        if (lastRunningAppId != 0 && lastRunningAppId != app.app.getAppId()) {
+            // Another app is running on the host: confirm quitting it first
+            UiHelper.displayQuitConfirmationDialog(this, new Runnable() {
+                @Override
+                public void run() {
+                    ServerHelper.doStart(AppView.this, app.app, computer, managerBinder);
+                }
+            }, null);
+        }
+        else {
+            // Resume is the same as start for us
+            ServerHelper.doStart(AppView.this, app.app, computer, managerBinder);
+        }
+    }
+
+    private void closeApp(final AppObject app) {
+        UiHelper.displayQuitConfirmationDialog(this, new Runnable() {
+            @Override
+            public void run() {
+                suspendGridUpdates = true;
+                ServerHelper.doQuit(AppView.this, computer,
+                        app.app, managerBinder, new Runnable() {
+                    @Override
+                    public void run() {
+                        // Trigger a poll immediately
+                        suspendGridUpdates = false;
+                        if (poller != null) {
+                            poller.pollNow();
+                        }
+                    }
+                });
+            }
+        }, null);
     }
 
     public static class AppObject {

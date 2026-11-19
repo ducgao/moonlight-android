@@ -21,6 +21,17 @@ import com.limelight.preferences.GlPreferences;
 import com.limelight.preferences.PreferenceConfiguration;
 import com.limelight.preferences.StreamSettings;
 import com.limelight.ui.AdapterFragment;
+import com.limelight.ui.CarouselView;
+import android.app.ActivityOptions;
+import android.app.Application;
+import android.content.ActivityNotFoundException;
+import android.view.Display;
+import android.view.WindowInsets;
+import android.view.WindowManager;
+import java.util.ArrayList;
+import java.util.List;
+import com.limelight.binding.input.secondscreen.HomeMenuPresentation;
+import com.limelight.binding.input.secondscreen.SecondScreenManager;
 import com.limelight.ui.AdapterFragmentCallbacks;
 import com.limelight.utils.Dialog;
 import com.limelight.utils.HelpLauncher;
@@ -36,6 +47,7 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.res.Configuration;
 import android.opengl.GLSurfaceView;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -43,12 +55,11 @@ import android.preference.PreferenceManager;
 import android.view.ContextMenu;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.KeyEvent;
 import android.view.View;
 import android.view.ContextMenu.ContextMenuInfo;
 import android.view.View.OnClickListener;
-import android.widget.AbsListView;
 import android.widget.AdapterView;
-import android.widget.AdapterView.OnItemClickListener;
 import android.widget.ImageButton;
 import android.widget.RelativeLayout;
 import android.widget.Toast;
@@ -61,6 +72,9 @@ import javax.microedition.khronos.opengles.GL10;
 
 public class PcView extends Activity implements AdapterFragmentCallbacks {
     private RelativeLayout noPcFoundLayout;
+    private HomeMenuPresentation homeMenu;
+    private boolean hasSecondScreen;
+    private int bottomScreenActivities;
     private PcGridAdapter pcGridAdapter;
     private ShortcutHelper shortcutHelper;
     private ComputerManagerService.ComputerManagerBinder managerBinder;
@@ -180,11 +194,29 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
             noPcFoundLayout.setVisibility(View.INVISIBLE);
         }
         pcGridAdapter.notifyDataSetChanged();
+        updateSideButtonMode();
+
+        // Keep the gamepad hint bar above the navigation bar / gesture handle
+        final View hintBar = findViewById(R.id.hintBar);
+        if (hintBar != null) {
+            final int basePadding = hintBar.getPaddingBottom();
+            hintBar.setOnApplyWindowInsetsListener(new View.OnApplyWindowInsetsListener() {
+                @Override
+                public WindowInsets onApplyWindowInsets(View v, WindowInsets insets) {
+                    v.setPadding(v.getPaddingLeft(), v.getPaddingTop(), v.getPaddingRight(),
+                            basePadding + insets.getSystemWindowInsetBottom());
+                    return insets;
+                }
+            });
+            hintBar.requestApplyInsets();
+        }
     }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        getApplication().registerActivityLifecycleCallbacks(bottomScreenTracker);
 
         // Assume we're in the foreground when created to avoid a race
         // between binding to CMS and onResume()
@@ -292,6 +324,8 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
 
     @Override
     public void onDestroy() {
+        getApplication().unregisterActivityLifecycleCallbacks(bottomScreenTracker);
+        dismissHomeMenu();
         super.onDestroy();
 
         if (managerBinder != null) {
@@ -303,6 +337,8 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
     protected void onResume() {
         super.onResume();
 
+        showHomeMenu();
+
         // Display a decoder crash notification if we've returned after a crash
         UiHelper.showDecoderCrashDialog(this);
 
@@ -313,6 +349,9 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
     @Override
     protected void onPause() {
         super.onPause();
+
+        // The stream (Game) uses the bottom screen as a trackpad
+        dismissHomeMenu();
 
         inForeground = false;
         stopComputerUpdates(false);
@@ -741,18 +780,206 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
         pcGridAdapter.notifyDataSetChanged();
     }
 
+    // The settings/help buttons stay hidden for a clean carousel; the SELECT button
+    // on the handheld (e.g. AYN Thor) toggles them.
     @Override
-    public int getAdapterFragmentLayoutId() {
-        return R.layout.pc_grid_view;
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_SELECT) {
+            toggleSideButtons();
+            return true;
+        }
+        return super.onKeyUp(keyCode, event);
     }
 
     @Override
-    public void receiveAbsListView(AbsListView listView) {
-        listView.setAdapter(pcGridAdapter);
-        listView.setOnItemClickListener(new OnItemClickListener() {
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BUTTON_SELECT) {
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    private void showHomeMenu() {
+        Display display = SecondScreenManager.findSecondaryDisplay(this);
+        hasSecondScreen = display != null;
+        // Don't cover Settings / Help / Add PC while they're open on the bottom screen
+        if (homeMenu == null && bottomScreenActivities == 0) {
+            if (display != null) {
+                List<HomeMenuPresentation.Action> actions = new ArrayList<>();
+                actions.add(new HomeMenuPresentation.Action(R.drawable.ic_settings,
+                        getString(R.string.home_menu_settings), new Runnable() {
+                    @Override
+                    public void run() {
+                        launchOnSecondScreen(new Intent(PcView.this, StreamSettings.class));
+                    }
+                }));
+                if (!getPackageManager().hasSystemFeature("amazon.hardware.fire_tv")) {
+                    actions.add(new HomeMenuPresentation.Action(R.drawable.ic_help,
+                            getString(R.string.home_menu_help), new Runnable() {
+                        @Override
+                        public void run() {
+                            launchOnSecondScreen(HelpLauncher.createSetupGuideWebViewIntent(PcView.this));
+                        }
+                    }));
+                }
+                actions.add(new HomeMenuPresentation.Action(R.drawable.ic_add,
+                        getString(R.string.carousel_add_pc), new Runnable() {
+                    @Override
+                    public void run() {
+                        launchOnSecondScreen(new Intent(PcView.this, AddComputerManually.class));
+                    }
+                }));
+
+                homeMenu = new HomeMenuPresentation(this, display, actions);
+                try {
+                    homeMenu.show();
+                } catch (WindowManager.InvalidDisplayException e) {
+                    LimeLog.warning("Unable to show home menu on second screen: " + e.getMessage());
+                    homeMenu = null;
+                }
+            }
+        }
+        updateSideButtonMode();
+    }
+
+    // Opens a screen on the bottom display (where the menu was), falling back to the main one
+    private void launchOnSecondScreen(Intent intent) {
+        Display display = homeMenu != null ? homeMenu.getDisplay() : null;
+        if (display == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            startActivity(intent);
+            return;
+        }
+
+        // The presentation sits above app windows, so take it down while the screen is open.
+        // It comes back when the launched activity is destroyed (see bottomScreenTracker).
+        dismissHomeMenu();
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
+        ActivityOptions options = ActivityOptions.makeBasic().setLaunchDisplayId(display.getDisplayId());
+        try {
+            startActivity(intent, options.toBundle());
+        } catch (SecurityException | ActivityNotFoundException e) {
+            LimeLog.warning("Unable to launch on second screen: " + e.getMessage());
+            intent.setFlags(0);
+            startActivity(intent);
+            showHomeMenu();
+        }
+    }
+
+    private static boolean isSecondScreenActivity(Activity activity) {
+        if (!(activity instanceof StreamSettings || activity instanceof AddComputerManually ||
+                activity instanceof HelpActivity)) {
+            return false;
+        }
+        return activity.getWindowManager().getDefaultDisplay().getDisplayId() != Display.DEFAULT_DISPLAY;
+    }
+
+    private final Application.ActivityLifecycleCallbacks bottomScreenTracker = new Application.ActivityLifecycleCallbacks() {
+        @Override
+        public void onActivityCreated(Activity activity, Bundle savedInstanceState) {
+            if (isSecondScreenActivity(activity)) {
+                bottomScreenActivities++;
+            }
+        }
+
+        @Override
+        public void onActivityDestroyed(Activity activity) {
+            if (isSecondScreenActivity(activity)) {
+                bottomScreenActivities = Math.max(0, bottomScreenActivities - 1);
+                if (bottomScreenActivities == 0 && inForeground) {
+                    showHomeMenu();
+                }
+            }
+        }
+
+        @Override public void onActivityStarted(Activity activity) {}
+        @Override public void onActivityResumed(Activity activity) {}
+        @Override public void onActivityPaused(Activity activity) {}
+        @Override public void onActivityStopped(Activity activity) {}
+        @Override public void onActivitySaveInstanceState(Activity activity, Bundle outState) {}
+    };
+
+    private void dismissHomeMenu() {
+        if (homeMenu != null) {
+            homeMenu.dismiss();
+            homeMenu = null;
+        }
+    }
+
+    // With a second screen the buttons live there, so hide the main-screen copies
+    // and the "SELECT Menu" hint; otherwise SELECT toggles them.
+    private void updateSideButtonMode() {
+        boolean onSecondScreen = hasSecondScreen;
+        View chip = findViewById(R.id.hintSelectChip);
+        View label = findViewById(R.id.hintSelectLabel);
+        if (chip != null) {
+            chip.setVisibility(onSecondScreen ? View.GONE : View.VISIBLE);
+        }
+        if (label != null) {
+            label.setVisibility(onSecondScreen ? View.GONE : View.VISIBLE);
+        }
+        if (onSecondScreen) {
+            View settings = findViewById(R.id.settingsButton);
+            View help = findViewById(R.id.helpButton);
+            if (settings != null) {
+                settings.setVisibility(View.GONE);
+            }
+            if (help != null) {
+                help.setVisibility(View.GONE);
+            }
+        }
+    }
+
+    private void toggleSideButtons() {
+        if (hasSecondScreen) {
+            // Buttons are on the bottom screen
+            return;
+        }
+        View settings = findViewById(R.id.settingsButton);
+        View help = findViewById(R.id.helpButton);
+        if (settings == null) {
+            return;
+        }
+
+        boolean show = settings.getVisibility() != View.VISIBLE;
+        settings.setVisibility(show ? View.VISIBLE : View.GONE);
+        if (help != null && !getPackageManager().hasSystemFeature("amazon.hardware.fire_tv")) {
+            help.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
+
+        if (show) {
+            settings.requestFocus();
+        }
+        else {
+            View carousel = findViewById(R.id.fragmentView);
+            if (carousel != null) {
+                carousel.requestFocus();
+            }
+        }
+    }
+
+    @Override
+    public int getAdapterFragmentLayoutId() {
+        return R.layout.carousel_view;
+    }
+
+    @Override
+    public void receiveCarouselView(CarouselView listView) {
+        // Black behind the (edge-to-edge) system bars too
+        getWindow().getDecorView().setBackgroundColor(Color.BLACK);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            getWindow().setStatusBarColor(Color.BLACK);
+            getWindow().setNavigationBarColor(Color.BLACK);
+        }
+        listView.setSourceAdapter(pcGridAdapter, R.layout.pc_carousel_add_item);
+        listView.setOnAddClickListener(new CarouselView.OnAddClickListener() {
             @Override
-            public void onItemClick(AdapterView<?> arg0, View arg1, int pos,
-                                    long id) {
+            public void onAddClick() {
+                startActivity(new Intent(PcView.this, AddComputerManually.class));
+            }
+        });
+        listView.setOnItemClickListener(new CarouselView.OnItemClickListener() {
+            @Override
+            public void onItemClick(View arg1, int pos) {
                 ComputerObject computer = (ComputerObject) pcGridAdapter.getItem(pos);
                 if (computer.details.state == ComputerDetails.State.UNKNOWN ||
                     computer.details.state == ComputerDetails.State.OFFLINE) {
@@ -768,6 +995,7 @@ public class PcView extends Activity implements AdapterFragmentCallbacks {
         });
         UiHelper.applyStatusBarPadding(listView);
         registerForContextMenu(listView);
+        listView.requestFocus();
     }
 
     public static class ComputerObject {
